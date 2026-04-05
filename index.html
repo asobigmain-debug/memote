@@ -561,7 +561,11 @@ async function addItem() {
   renderCurrent(); showToast('追加しました');
 }
 
+// 編集中アイテムを保持
+let editingItem = null;
+
 function startEdit(item) {
+  editingItem = item; // オブジェクトごと保持
   const row = document.getElementById(`row-${item.id}`);
   row.className = 'item-row editing';
   row.innerHTML = `<div class="edit-form">
@@ -569,31 +573,42 @@ function startEdit(item) {
     <textarea class="edit-input edit-input-content" id="ec-${item.id}" placeholder="内容">${escH(item.content||'')}</textarea>
     <div class="edit-actions">
       <button class="btn-cancel" onclick="cancelEdit()">キャンセル</button>
-      <button class="btn-save" onclick="saveEdit(${item.id},'${escH(item.tab)}')">保存</button>
+      <button class="btn-save" onclick="saveEdit()">保存</button>
     </div>
   </div>`;
 }
 
-async function saveEdit(id, tab) {
-  const title = document.getElementById(`et-${id}`).value.trim();
-  const content = document.getElementById(`ec-${id}`).value;
-  const idx = allItems.findIndex(i => i.id === id);
-  const rowId = allItems[idx] ? allItems[idx].id : id;
+async function saveEdit() {
+  if (!editingItem) return;
+  const item = editingItem;
+  const title = document.getElementById(`et-${item.id}`).value.trim();
+  const content = document.getElementById(`ec-${item.id}`).value;
+
   if (gasUrl && navigator.onLine) {
-    try { await callGas('updateItem', { tab, rowId, title, content }); }
+    try { await callGas('updateItem', { tab: item.tab, rowId: item.id, title, content }); }
     catch(e) { showToast('エラー: ' + e.message); return; }
   } else {
-    enqueue({ action: 'updateItem', params: { tab, rowId, title, content } });
+    enqueue({ action: 'updateItem', params: { tab: item.tab, rowId: item.id, title, content } });
   }
+
+  const idx = allItems.findIndex(i => i.id === item.id);
   if (idx >= 0) { allItems[idx].title = title; allItems[idx].content = content; }
   if (!gasUrl) saveLocal();
   else localStorage.setItem(KEY_CACHE, JSON.stringify({ tabs, allItems }));
-  if (isSearching) { const si = searchResults.findIndex(i => i.id === id); if(si>=0){searchResults[si].title=title;searchResults[si].content=content;} renderItems(searchResults, true); }
-  else renderCurrent();
+
+  editingItem = null;
+  if (isSearching) {
+    const si = searchResults.findIndex(i => i.id === item.id);
+    if (si >= 0) { searchResults[si].title = title; searchResults[si].content = content; }
+    renderItems(searchResults, true);
+  } else renderCurrent();
   showToast('保存しました');
 }
 
-function cancelEdit() { if (isSearching) renderItems(searchResults, true); else renderCurrent(); }
+function cancelEdit() {
+  editingItem = null;
+  if (isSearching) renderItems(searchResults, true); else renderCurrent();
+}
 
 async function deleteItem(id) {
   if (!confirm('この項目を削除しますか？')) return;
