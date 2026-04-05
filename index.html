@@ -587,21 +587,32 @@ async function saveEdit() {
   if (gasUrl && navigator.onLine) {
     try { await callGas('updateItem', { tab: item.tab, rowId: item.id, title, content }); }
     catch(e) { showToast('エラー: ' + e.message); return; }
+    // GASから最新データを取り直してキャッシュ更新
+    const result = await callGas('getAll').catch(() => null);
+    if (result) {
+      tabs = result.tabs || [];
+      allItems = [];
+      Object.entries(result.items || {}).forEach(([tab, items]) => {
+        items.forEach(i => allItems.push({ ...i, tab }));
+      });
+      localStorage.setItem(KEY_CACHE, JSON.stringify({ tabs, allItems }));
+    }
   } else {
     enqueue({ action: 'updateItem', params: { tab: item.tab, rowId: item.id, title, content } });
+    const idx = allItems.findIndex(i => i.id === item.id);
+    if (idx >= 0) { allItems[idx].title = title; allItems[idx].content = content; }
+    saveLocal();
   }
 
-  const idx = allItems.findIndex(i => i.id === item.id);
-  if (idx >= 0) { allItems[idx].title = title; allItems[idx].content = content; }
-  if (!gasUrl) saveLocal();
-  else localStorage.setItem(KEY_CACHE, JSON.stringify({ tabs, allItems }));
-
   editingItem = null;
+  renderTabs();
   if (isSearching) {
     const si = searchResults.findIndex(i => i.id === item.id);
     if (si >= 0) { searchResults[si].title = title; searchResults[si].content = content; }
     renderItems(searchResults, true);
-  } else renderCurrent();
+  } else {
+    renderItems(allItems.filter(i => i.tab === currentTab), false);
+  }
   showToast('保存しました');
 }
 
@@ -617,14 +628,23 @@ async function deleteItem(id) {
   if (gasUrl && navigator.onLine) {
     try { await callGas('deleteItem', { tab: item.tab, rowId: id }); }
     catch(e) { showToast('エラー: ' + e.message); return; }
+    // GASから最新データを取り直す
+    const result = await callGas('getAll').catch(() => null);
+    if (result) {
+      tabs = result.tabs || [];
+      allItems = [];
+      Object.entries(result.items || {}).forEach(([tab, items]) => {
+        items.forEach(i => allItems.push({ ...i, tab }));
+      });
+      localStorage.setItem(KEY_CACHE, JSON.stringify({ tabs, allItems }));
+    }
   } else {
     enqueue({ action: 'deleteItem', params: { tab: item.tab, rowId: id } });
+    allItems = allItems.filter(i => i.id !== id);
+    saveLocal();
   }
-  allItems = allItems.filter(i => i.id !== id);
-  if (!gasUrl) saveLocal();
-  else localStorage.setItem(KEY_CACHE, JSON.stringify({ tabs, allItems }));
   if (isSearching) { searchResults = searchResults.filter(i => i.id !== id); renderItems(searchResults, true); }
-  else renderCurrent();
+  else renderItems(allItems.filter(i => i.tab === currentTab), false);
   showToast('削除しました');
 }
 
